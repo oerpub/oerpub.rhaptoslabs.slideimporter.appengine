@@ -108,7 +108,7 @@ def get_slideshow_url(soup):
 def api_key(api_key=None):
     return db.Key.from_path('Api', api_key or 'default_api')
 
-def send_mail(send_to="saketkc@gmail.com",body="test",slideshow_id="1213"):
+def send_mail(subject="Slideshow Converted", send_to="saketkc@gmail.com", body="test", slideshow_id="1213"):
     message = mail.EmailMessage(sender="Connexions OERPUB <saketkc@gmail.com>",
                             subject="Slideshow Converted")
     message.to = send_to
@@ -150,12 +150,12 @@ def slideshare_cron():
 			slideshow_status = get_slideshow_status(soup)
 			if str(slideshow_status) == "3":
 				user.delete()
-				send_mail(send_to=user.useremail,body="Your slideshow conversion to SlideShare failed. This means that the slideshare embed in the module on cnx.org will not work.Please create the module again. ",slideshow_id=str(user.slideshow_id))
+				send_mail(subject="Slideshow Conversion Failed", send_to=user.useremail,body="Your slideshow conversion to SlideShare failed. This means that the slideshare embed in the module on cnx.org will not work.Please create the module again. ",slideshow_id=str(user.slideshow_id))
 
 			elif str(slideshow_status) == "2":
 				user.delete()
 				slideshow_url = get_slideshow_url(soup)
-				send_mail(send_to=user.useremail,body="Your slideshow id <a href='"+str(slideshow_url) +"'>"+str(user.slideshow_id)+"</a> has been converterd successfully",slideshow_id=str(user.slideshow_id))
+				send_mail(subject="Slideshow Conversion Successful", send_to=user.useremail,body="Your slideshow id <a href='"+str(slideshow_url) +"'>"+str(user.slideshow_id)+"</a> has been converterd successfully",slideshow_id=str(user.slideshow_id))
 
 class SlideSharePage(webapp.RequestHandler):
     def get(self):
