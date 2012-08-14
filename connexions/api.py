@@ -4,15 +4,12 @@ import  time
 import sha
 import sys
 import urllib
-import wsgiref.handlers
 import urllib2
-import datetime
 from BeautifulSoup.BeautifulSoup import BeautifulSoup as BS
 from google.appengine.ext import db
-from google.appengine.api import users
-from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
 from google.appengine.api import mail
+from google.appengine.ext import webapp
 class Users(db.Model):
     username = db.StringProperty()
     useremail = db.StringProperty(multiline=True)
@@ -20,7 +17,6 @@ class Users(db.Model):
     slideshow_uploaded_at = db.DateTimeProperty()
     last_checked_at = db.DateTimeProperty(auto_now_add=True)
     to_be_scanned = db.BooleanProperty()
-    
 
 class SlideShareApi:
     def __init__(self,params_as_dict,proxy=None):
@@ -61,44 +57,36 @@ class SlideShareApi:
         params = self.set_api_parameters()
         url = "http://www.slideshare.net/api/2/get_slideshows_by_user?username_for=" + str(username_for)
         data = urllib2.urlopen(url,params).read()
-        soup = BeautifulSoup(data)
+        soup = BS(data)
         return soup
-        
-    def upload_slideshow(self,username,password,title,src_file):
-        params =  self.set_api_parameters(encode = False,username=username,password=password,slideshow_title=title,slideshow_srcfile=src_file)
-        params['slideshow_srcfile'] = open(src_file, 'rb')
-        opener = urllib2.build_opener(MultipartPostHandler)
-        data = opener.open("http://www.slideshare.net/api/2/upload_slideshow", params).read()
-        return data    
-    
+
+
     def get_slideshow_info(self,slideshow_id):
         params = self.set_api_parameters(encode=True,slideshow_id=str(slideshow_id))
         data = urllib2.urlopen("http://www.slideshare.net/api/2/get_slideshow", params).read()
         soup = BS(data)
         #status = soup.find('status').string
         return soup
-        
+
     def get_detailed_info(self,slideshow_id):
         params = self.set_api_parameters(encode=True,slideshow_id=str(slideshow_id),detailed=1,get_transcript=1)
         data = urllib2.urlopen("http://www.slideshare.net/api/2/get_slideshow", params).read()
-        soup = BeautifulSoup(data)
-        return soup      
+        soup = BS(data)
+        return soup
 
-    
+
 def get_slideshow_status(soup):
     return soup.find('status').string
     """<Status>{ 0 if queued for conversion, 1 if converting, 2 if converted,
             3 if conversion failed }</Status>"""
 
-    
+
 def get_download_link(soup):
     try:
         return soup.find('downloadurl').string
     except:
-        SlideShowDoesNotExistError("No Download link generated yet")        
+        return "No Download link generated yet"
 
-def get_slideshow_status(soup):
-    return soup.find('status').string
 
 def get_transcript(soup):
     try:
@@ -113,7 +101,7 @@ def show_slideshow(slideshow_id):
 def get_details(slideshow_id):
     ss_api = SlideShareApi({"api_key":"oQO2stCt", "api_secret":"CnaNZzxx"})
     return ss_api.get_detailed_info(slideshow_id)
-    
+
 def get_slideshow_url(soup):
 	return soup.find('url').string
 
@@ -124,14 +112,10 @@ def send_mail(send_to="saketkc@gmail.com",body="test",slideshow_id="1213"):
     message = mail.EmailMessage(sender="Connexions OERPUB <saketkc@gmail.com>",
                             subject="Slideshow Converted")
     message.to = send_to
-    #message.cc = "saketkc@gmail.com"
+    message.cc = "saketkc@gmail.com"
     message.html = body
     message.send()
-    #mail.send_mail(sender="Connexions <saketkc@gmail.com>",
-     #                    to="saketkc@gmail.com",
-     #                    subject="Your SlideShow Conversion is now Completed ",
-     #                    body="""Your slideshow id """+ slideshow_id+""" has been upladed""")
-    
+
 class MainPage(webapp.RequestHandler):
     def get(self):
         self.response.headers['Content-Type'] = 'text/plain'
@@ -144,8 +128,8 @@ class MainPage(webapp.RequestHandler):
             #else:
                 self.response.out.write('An anonymous person wrote:')
                 self.response.out.write('<blockquote>%s</blockquote>' % cgi.escape(user.useremail))
-        
-    def post(self):        
+
+    def post(self):
         username = self.request.get('username')
         email = self.request.get('email')
         slideshow_id = self.request.get('slideshow_id')
@@ -154,38 +138,28 @@ class MainPage(webapp.RequestHandler):
         users.useremail = email
         users.slideshow_id = int(slideshow_id)
         users.slideshow_uploaded_at = datetime.datetime.now()
-        users.to_be_scanned = True        
+        users.to_be_scanned = True
         users.put()
-        
-        
 
 def slideshare_cron():
-	
 	users = db.GqlQuery("SELECT * FROM Users")
 	for user in users:
 		if user.username:
 			ss_api = SlideShareApi({"api_key":"oQO2stCt", "api_secret":"CnaNZzxx"})
 			soup = ss_api.get_slideshow_info(str(user.slideshow_id))
 			slideshow_status = get_slideshow_status(soup)
-			
-			if str(slideshow_status) == "2":
+			if str(slideshow_status) == "3":
 				user.delete()
-				slideshow_url = get_slideshow_url(soup)		
-								# delete user or update the flag
-				
-				send_mail(send_to=user.useremail,body="Your slideshow id <a href='"+str(slideshow_url) +"'>"+str(user.slideshow_id)+"</a> has been converterd successfully",slideshow_id=str(user.slideshow_id))  
-				
-			
-            
-              
+				send_mail(send_to=user.useremail,body="Your slideshow conversion to SlideShare failed. This means that the slideshare embed in the module on cnx.org will not work.Please create the module again. ",slideshow_id=str(user.slideshow_id))
+
+			elif str(slideshow_status) == "2":
+				user.delete()
+				slideshow_url = get_slideshow_url(soup)
+				send_mail(send_to=user.useremail,body="Your slideshow id <a href='"+str(slideshow_url) +"'>"+str(user.slideshow_id)+"</a> has been converterd successfully",slideshow_id=str(user.slideshow_id))
+
 class SlideSharePage(webapp.RequestHandler):
-    def get(self):		
+    def get(self):
 		slideshare_cron()
-		
-		
-
-
-        
 application = webapp.WSGIApplication(
                                      [('/', MainPage),('/mail',SlideSharePage),],
                                      debug=True)
